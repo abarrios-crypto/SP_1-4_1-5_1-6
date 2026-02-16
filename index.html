@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Inmunidad Colectiva - SIC</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary-blue: #0ea5e9;
+            --success-green: #22c55e;
+            --warning-red: #ef4444;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #f0f4f8;
+        }
+        .drop-zone {
+            min-height: 110px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 1rem;
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 15px;
+            background: rgba(255,255,255,0.5);
+        }
+        .drop-zone.active {
+            border-color: var(--primary-blue);
+            background-color: #f0f9ff;
+            box-shadow: 0 0 15px rgba(14, 165, 233, 0.2);
+        }
+        .draggable-item {
+            cursor: grab;
+            user-select: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-left-width: 4px;
+        }
+        .draggable-item:active { cursor: grabbing; transform: scale(0.98); }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.4s ease-out; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Estilos de Pestañas Activas */
+        .nav-tab {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .nav-tab.active-tab {
+            background-color: #ffffff;
+            color: #020617; /* Slate 950 */
+            border-bottom: 4px solid #3b82f6; /* Blue 500 */
+        }
+        .nav-tab:not(.active-tab) {
+            background-color: #f8fafc; /* Slate 50 */
+            color: #64748b; /* Slate 500 */
+        }
+
+        .tooltip { position: relative; display: inline-block; }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 260px;
+            background-color: #0f172a;
+            color: #fff;
+            border-radius: 10px;
+            padding: 12px;
+            position: absolute;
+            z-index: 50;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.75rem;
+            line-height: 1.4;
+            pointer-events: none;
+        }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+
+        .correct-cell { background-color: #f0fdf4 !important; border-color: #22c55e !important; color: #15803d; }
+        .incorrect-cell { background-color: #fef2f2 !important; border-color: #ef4444 !important; color: #b91c1c; }
+
+        .ticket {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            position: relative;
+            clip-path: polygon(
+                0% 0%, 100% 0%, 
+                100% 45%, 95% 50%, 100% 55%, 
+                100% 100%, 0% 100%, 
+                0% 55%, 5% 50%, 0% 45%
+            );
+            border: 2px solid #e2e8f0;
+        }
+
+        @media print {
+            .no-print { display: none; }
+            #certificate-area { display: flex !important; background: white !important; position: static !important; }
+        }
+    </style>
+</head>
+<body class="p-2 md:p-6">
+
+    <div class="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden no-print border border-slate-200">
+        <!-- Dashboard Superior -->
+        <div class="bg-slate-900 text-white p-6 border-b border-blue-500/30">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-8">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-black tracking-tighter uppercase italic">Simulador SIC</h1>
+                        <p class="text-blue-400 text-xs font-mono uppercase tracking-widest">Inmunidad Colectiva v2.5</p>
+                    </div>
+                </div>
+                
+                <div class="flex flex-1 max-w-md w-full bg-slate-800 p-4 rounded-2xl border border-slate-700 items-center gap-6">
+                    <div class="canvas-container relative">
+                        <canvas id="bioCanvas" width="100" height="100"></canvas>
+                        <div id="percentage-label" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-300">0%</div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between text-[10px] uppercase font-bold mb-1">
+                            <span class="text-slate-400">Estado del Sistema</span>
+                            <span id="star-count" class="text-yellow-400">⭐ 0/10</span>
+                        </div>
+                        <div class="h-3 bg-slate-700 rounded-full overflow-hidden border border-slate-600">
+                            <div id="main-progress-bar" class="h-full bg-gradient-to-r from-blue-600 to-emerald-500 w-0 transition-all duration-1000"></div>
+                        </div>
+                        <p id="status-text" class="text-[10px] mt-2 font-mono text-emerald-400">Analizando carga viral...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navegación Colorida y Activa -->
+        <nav id="main-nav" class="flex bg-slate-100 border-b overflow-x-auto">
+            <button onclick="switchTab(1)" id="tab1" class="nav-tab flex-1 px-8 py-5 font-black uppercase text-xs tracking-widest border-r border-slate-200 active-tab">
+                I. Paradigmas
+            </button>
+            <button onclick="switchTab(2)" id="tab2" class="nav-tab flex-1 px-8 py-5 font-black uppercase text-xs tracking-widest border-r border-slate-200">
+                II. Protocolo FESP
+            </button>
+            <button onclick="switchTab(3)" id="tab3" class="nav-tab flex-1 px-8 py-5 font-black uppercase text-xs tracking-widest">
+                III. Bioética AAAQ
+            </button>
+        </nav>
+
+        <div class="p-4 md:p-8">
+            
+            <!-- MODULO 1 -->
+            <div id="content1" class="tab-content">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div class="space-y-4">
+                        <div class="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                            <h2 class="text-xl font-bold text-slate-800">Lentes de Diagnóstico Poblacional</h2>
+                            <p class="text-slate-600 text-sm">Identifica el enfoque teórico analizando la evidencia clínica y social.</p>
+                        </div>
+                        
+                        <div id="cases-pool" class="space-y-3">
+                            <div draggable="true" ondragstart="drag(event)" id="case1" data-answer="determinantes" class="draggable-item p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md border-l-orange-500">
+                                <span class="text-xs font-bold text-orange-600 uppercase block mb-1">Evidencia A</span>
+                                <strong>Barreras estructurales:</strong> Paciente con TB que abandona tratamiento porque el transporte cuesta dos días de salario mínimo.
+                            </div>
+                            <div draggable="true" ondragstart="drag(event)" id="case2" data-answer="ecologico" class="draggable-item p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md border-l-green-500">
+                                <span class="text-xs font-bold text-green-600 uppercase block mb-1">Evidencia B</span>
+                                <strong>Factor Ambiental:</strong> Incremento de casos de asma tras la apertura de una planta industrial en el valle de vientos dominantes.
+                            </div>
+                            <div draggable="true" ondragstart="drag(event)" id="case3" data-answer="salutogenico" class="draggable-item p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md border-l-purple-500">
+                                <span class="text-xs font-bold text-purple-600 uppercase block mb-1">Evidencia C</span>
+                                <strong>Activos de Salud:</strong> Comunidad que redujo diabetes un 15% tras crear un sistema de riego para huertos urbanos vecinales.
+                            </div>
+                            <div draggable="true" ondragstart="drag(event)" id="case4" data-answer="biomedico" class="draggable-item p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md border-l-blue-500">
+                                <span class="text-xs font-bold text-blue-600 uppercase block mb-1">Evidencia D</span>
+                                <strong>Patología Molecular:</strong> Secuenciación de cepa de Influenza para determinar resistencia a antivirales específicos.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div ondrop="drop(event)" ondragover="allowDrop(event)" data-paradigma="biomedico" class="drop-zone">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-black uppercase text-blue-600">Lente Biomédico</span>
+                                <div class="tooltip">⭐ 1 <span class="tooltiptext">Centrado en la biología celular, patología y clínica individual.</span></div>
+                            </div>
+                        </div>
+                        <div ondrop="drop(event)" ondragover="allowDrop(event)" data-paradigma="ecologico" class="drop-zone">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-black uppercase text-green-600">Lente Ecológico</span>
+                                <div class="tooltip">⭐ 1 <span class="tooltiptext">Analiza la tríada epidemiológica: Agente, Huésped y Medio Ambiente.</span></div>
+                            </div>
+                        </div>
+                        <div ondrop="drop(event)" ondragover="allowDrop(event)" data-paradigma="determinantes" class="drop-zone">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-black uppercase text-orange-600">Lente Determinantes</span>
+                                <div class="tooltip">⭐ 1 <span class="tooltiptext">Condiciones sociales, económicas y políticas donde las personas nacen y viven.</span></div>
+                            </div>
+                        </div>
+                        <div ondrop="drop(event)" ondragover="allowDrop(event)" data-paradigma="salutogenico" class="drop-zone">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-[10px] font-black uppercase text-purple-600">Lente Salutogénico</span>
+                                <div class="tooltip">⭐ 1 <span class="tooltiptext">Enfoque en los factores que generan salud, bienestar y resiliencia comunitaria.</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 flex justify-between items-center">
+                    <p class="text-xs text-slate-400 italic">* Arrastra las evidencias a sus lentes correspondientes.</p>
+                    <div class="flex gap-4">
+                        <button onclick="evaluateApp1()" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-blue-700 shadow-xl transition-all active:scale-95">Sincronizar Lentes</button>
+                        <button id="next-to-2" onclick="switchTab(2)" class="hidden bg-slate-800 text-white px-6 py-4 rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-black transition-all">Siguiente Estación →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODULO 2 -->
+            <div id="content2" class="tab-content">
+                <div class="bg-slate-900 rounded-3xl p-6 mb-8 text-white border-l-8 border-emerald-500">
+                    <h2 class="text-2xl font-bold italic">Matriz Operativa FESP</h2>
+                    <p class="text-slate-400 text-sm">Configura los protocolos de intervención para el control de arbovirosis.</p>
+                </div>
+
+                <div class="overflow-hidden rounded-2xl border border-slate-200 shadow-lg">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-widest font-black">
+                            <tr>
+                                <th class="p-5 text-left border-b">Componente FESP</th>
+                                <th class="p-5 text-left border-b">Protocolo de Acción</th>
+                                <th class="p-5 text-left border-b">Unidad Responsable</th>
+                                <th class="p-5 text-left border-b">Pilar Estratégico</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fesp-table-body"></tbody>
+                    </table>
+                </div>
+                <div class="mt-8 flex justify-between items-center">
+                    <button onclick="switchTab(1)" class="text-slate-400 font-bold uppercase text-xs tracking-widest hover:text-slate-600 transition-all">← Volver</button>
+                    <div class="flex gap-4">
+                        <button onclick="evaluateApp2()" class="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-tighter hover:bg-emerald-700 shadow-xl transition-all">Ejecutar Plan Operativo</button>
+                        <button id="next-to-3" onclick="switchTab(3)" class="hidden bg-slate-800 text-white px-6 py-4 rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-black transition-all">Siguiente Estación →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODULO 3 -->
+            <div id="content3" class="tab-content">
+                <div class="flex items-center gap-4 mb-8">
+                    <div class="h-px flex-1 bg-slate-200"></div>
+                    <h2 class="text-xl font-bold text-slate-400 uppercase tracking-widest">Tribunal de Bioética y Derechos</h2>
+                    <div class="h-px flex-1 bg-slate-200"></div>
+                </div>
+                <div id="aaaq-container" class="grid grid-cols-1 md:grid-cols-2 gap-8"></div>
+                <div class="mt-10 flex flex-col items-center gap-6">
+                    <div class="flex gap-4">
+                        <button onclick="switchTab(2)" class="text-slate-400 font-bold uppercase text-xs tracking-widest hover:text-slate-600 transition-all">← Volver</button>
+                        <button onclick="evaluateApp3()" class="bg-slate-800 text-white px-12 py-5 rounded-full font-black uppercase tracking-widest hover:bg-black shadow-2xl transition-all">Emitir Dictamen Ético</button>
+                    </div>
+                    
+                    <!-- Area de Certificación Integrada -->
+                    <div id="cert-activation-zone" class="w-full max-w-md hidden bg-yellow-50 border-2 border-yellow-200 p-6 rounded-3xl text-center animate-pulse">
+                        <p class="text-yellow-800 font-black text-sm uppercase mb-4 tracking-tighter">¡Nivel Maestro de Salud Pública Alcanzado!</p>
+                        <input type="text" id="user-name-input" placeholder="Escribe tu nombre completo" class="w-full p-4 rounded-xl border-2 border-yellow-300 mb-4 text-center font-bold outline-none focus:ring-4 ring-yellow-400/20">
+                        <button onclick="generateTicket()" class="w-full bg-yellow-500 text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-yellow-600 transition-all">Generar Ticket de 10 Estrellas</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Alertas dinámicas -->
+        <div id="global-feedback" class="mx-8 mb-8 p-6 rounded-2xl hidden"></div>
+
+        <!-- Footer Informativo -->
+        <div class="p-8 border-t bg-slate-50 flex justify-center">
+            <p id="footer-status" class="text-[10px] uppercase font-bold text-slate-400 tracking-widest italic">Completa todos los módulos con éxito para desbloquear el ticket</p>
+        </div>
+    </div>
+
+    <!-- Ticket de Estrellas -->
+    <div id="certificate-area" class="hidden fixed inset-0 bg-slate-100 items-center justify-center p-4 z-[100] no-print">
+        <div class="ticket shadow-2xl max-w-2xl w-full border-4 border-slate-800">
+            <div class="text-center mb-6">
+                <div class="text-xs font-black uppercase tracking-[0.3em] text-blue-600 mb-2">Ticket de Acreditación SIC</div>
+                <h1 class="text-4xl font-black tracking-tighter">10 ESTRELLAS DORADAS</h1>
+                <div class="h-1 w-20 bg-yellow-400 mx-auto my-4"></div>
+            </div>
+            
+            <div class="bg-slate-50 p-6 rounded-xl border border-dashed border-slate-300 mb-6">
+                <p class="text-sm text-center italic text-slate-600 mb-4">Se certifica que el usuario ha completado satisfactoriamente los 3 ciclos de inmunidad colectiva, demostrando pericia en el manejo de FESP y Bioética.</p>
+                <div class="text-3xl font-mono font-bold text-center py-2 border-y border-slate-200" id="cert-name">ESTUDIANTE DESTACADO</div>
+            </div>
+
+            <div class="flex justify-between items-end">
+                <div class="text-[10px] font-mono leading-tight">
+                    REF: SIC-2024-SP<br>
+                    FECHA: <span id="cert-date">--/--/--</span><br>
+                    VALIDEZ: PERMANENTE
+                </div>
+                <div class="text-right">
+                    <div class="text-xs font-bold border-t-2 border-slate-900 pt-1">M.C. Adriana Alicia Barrios Rodríguez</div>
+                    <div class="text-[9px] uppercase text-slate-500">Validación Docente - Facultad de Salud</div>
+                </div>
+            </div>
+            
+            <div class="mt-8 flex gap-4 no-print">
+                <button onclick="window.print()" class="flex-1 bg-slate-900 text-white py-3 rounded-lg font-bold">Imprimir / Guardar PDF</button>
+                <button onclick="document.getElementById('certificate-area').classList.add('hidden')" class="px-6 bg-slate-200 text-slate-600 py-3 rounded-lg font-bold italic">Regresar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let appState = {
+            stars: 0,
+            scores: { app1: 0, app2: 0, app3: 0 },
+            completed: { app1: false, app2: false, app3: false }
+        };
+
+        const FESP_DATA = [
+            { n: 2, name: "Vigilancia Epidemiológica", action: "vigi", resp: "epid", pilar: "Evaluación" },
+            { n: 4, name: "Participación Social", action: "alianza", resp: "gob", pilar: "Desarrollo de Políticas" },
+            { n: 8, name: "Capacitación RH", action: "capacita", resp: "ensenanza", pilar: "Asignación de Recursos" },
+            { n: 11, name: "Gestión Determinantes", action: "emergencia", resp: "prot", pilar: "Acceso" }
+        ];
+
+        const FESP_OPTIONS = {
+            actions: [
+                { id: "vigi", text: "Monitoreo de carga viral y mapas de calor" },
+                { id: "alianza", text: "Asambleas comunitarias para autogestión de riesgos" },
+                { id: "capacita", text: "Diplomado en Triage Bioético para Hospitales" },
+                { id: "emergencia", text: "Redirección de fondos a zonas de alta vulnerabilidad" }
+            ],
+            resps: [
+                { id: "epid", text: "Unidad de Inteligencia Sanitaria" },
+                { id: "gob", text: "Líderes y Gestores Comunitarios" },
+                { id: "ensenanza", text: "Centro de Formación Continua" },
+                { id: "prot", text: "Consejo de Salubridad General" }
+            ]
+        };
+
+        const AAAQ_CASES = [
+            { 
+                title: "Expediente A-204", 
+                desc: "Clínica periférica sin rampa de acceso, el personal ignora el protocolo de género y las vacunas están caducadas.", 
+                ansLabels: ["Accesibilidad (Física)", "Aceptabilidad (Protocolo)", "Calidad (Insumos)"],
+                ans: [true, true, true],
+                action: "ok"
+            },
+            { 
+                title: "Expediente B-109", 
+                desc: "Hospital de alta especialidad con equipo robótico, pero cobra cuotas ilegales y no tiene traductores para lengua indígena.", 
+                ansLabels: ["Accesibilidad (Económica)", "Aceptabilidad (Cultural)", "Disponibilidad (Tecnológica)"],
+                ans: [true, true, false],
+                action: "ok"
+            }
+        ];
+
+        function renderFESP() {
+            const container = document.getElementById('fesp-table-body');
+            container.innerHTML = "";
+            FESP_DATA.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-slate-50 transition-all group";
+                tr.innerHTML = `
+                    <td class="p-5 font-bold text-slate-800 bg-slate-50/50">FESP ${item.n}</td>
+                    <td class="p-2">
+                        <select id="act-${item.n}" class="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 ring-blue-500">
+                            <option value="">-- Acción --</option>
+                            ${FESP_OPTIONS.actions.map(o => `<option value="${o.id}">${o.text}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td class="p-2">
+                        <select id="res-${item.n}" class="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 ring-blue-500">
+                            <option value="">-- Unidad --</option>
+                            ${FESP_OPTIONS.resps.map(o => `<option value="${o.id}">${o.text}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td class="p-2">
+                        <select id="pil-${item.n}" class="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 ring-blue-500">
+                            <option value="">-- Pilar --</option>
+                            <option value="Evaluación">Evaluación</option>
+                            <option value="Desarrollo de Políticas">Políticas</option>
+                            <option value="Asignación de Recursos">Recursos</option>
+                            <option value="Acceso">Acceso</option>
+                        </select>
+                    </td>
+                `;
+                container.appendChild(tr);
+            });
+        }
+
+        function renderAAAQ() {
+            const container = document.getElementById('aaaq-container');
+            container.innerHTML = "";
+            AAAQ_CASES.forEach((c, i) => {
+                const div = document.createElement('div');
+                div.id = `aaaq-card-${i}`;
+                div.className = "p-8 bg-white border-2 border-slate-100 rounded-[2rem] shadow-sm hover:shadow-xl transition-all duration-500 relative overflow-hidden";
+                div.innerHTML = `
+                    <div class="absolute top-0 right-0 p-4 bg-slate-100 text-[9px] font-black uppercase text-slate-400">Bio-Audit</div>
+                    <h3 class="font-black text-xl mb-3 text-slate-900">${c.title}</h3>
+                    <p class="text-sm leading-relaxed text-slate-500 mb-8 p-5 bg-slate-50 rounded-2xl italic">"${c.desc}"</p>
+                    
+                    <div class="grid grid-cols-1 gap-3 mb-8">
+                        ${c.ansLabels.map((l, j) => `
+                            <label class="flex items-center gap-4 p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-blue-50 transition-all group">
+                                <input type="checkbox" class="check-${i} w-6 h-6 rounded-lg text-blue-600 border-2 border-slate-200 focus:ring-0">
+                                <span class="text-sm font-bold text-slate-600 group-hover:text-blue-700">${l}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                    
+                    <select id="aaaq-act-${i}" class="w-full p-4 text-xs font-black uppercase bg-slate-900 text-blue-400 rounded-2xl outline-none border-0">
+                        <option value="">-- Protocolo de Resolución --</option>
+                        <option value="ok">Intervenir: Garantizar Derechos Constitucionales</option>
+                        <option value="no">Referir: El caso excede la jurisdicción ética</option>
+                    </select>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function evaluateApp1() {
+            let hits = 0;
+            document.querySelectorAll('.drop-zone').forEach(z => {
+                const p = z.dataset.paradigma;
+                z.querySelectorAll('.draggable-item').forEach(i => {
+                    if(i.dataset.answer === p) hits++;
+                });
+            });
+            appState.scores.app1 = (hits / 4) * 100;
+            appState.completed.app1 = appState.scores.app1 >= 100;
+            if(appState.completed.app1) {
+                document.getElementById('next-to-2').classList.remove('hidden');
+                showFeedback("✅ SINCRO EXITOSA: Estación I completada. Puedes avanzar.", true);
+            } else {
+                showFeedback("❌ ERROR DE LECTURA: Los lentes no coinciden con la evidencia.", false);
+            }
+            updateUI();
+        }
+
+        function evaluateApp2() {
+            let correctCount = 0;
+            const totalItems = FESP_DATA.length * 3;
+
+            FESP_DATA.forEach(item => {
+                const actSel = document.getElementById(`act-${item.n}`);
+                const resSel = document.getElementById(`res-${item.n}`);
+                const pilSel = document.getElementById(`pil-${item.n}`);
+
+                const check = (el, val) => {
+                    if(el.value === val) { 
+                        correctCount++; el.parentElement.className = "p-2 correct-cell"; 
+                    } else { 
+                        el.parentElement.className = "p-2 incorrect-cell"; 
+                    }
+                };
+                check(actSel, item.action);
+                check(resSel, item.resp);
+                check(pilSel, item.pilar);
+            });
+
+            appState.scores.app2 = (correctCount / totalItems) * 100;
+            appState.completed.app2 = appState.scores.app2 >= 90;
+            if(appState.completed.app2) {
+                document.getElementById('next-to-3').classList.remove('hidden');
+                showFeedback("✅ MATRIZ VALIDADA: Estación II lista. Avanza al tribunal bioético.", true);
+            } else {
+                showFeedback("❌ FALLO DE GESTIÓN: Revisa responsabilidades y pilares estratégicos.", false);
+            }
+            updateUI();
+        }
+
+        function evaluateApp3() {
+            let casesOk = 0;
+            AAAQ_CASES.forEach((c, i) => {
+                const card = document.getElementById(`aaaq-card-${i}`);
+                const checks = Array.from(document.querySelectorAll(`.check-${i}`)).map(k => k.checked);
+                const act = document.getElementById(`aaaq-act-${i}`).value;
+                const match = JSON.stringify(checks) === JSON.stringify(c.ans) && act === c.action;
+                if(match) {
+                    casesOk++; card.classList.add('ring-4', 'ring-emerald-500/30', 'bg-emerald-50');
+                } else {
+                    card.classList.add('ring-4', 'ring-red-500/30', 'bg-red-50');
+                }
+            });
+            appState.scores.app3 = (casesOk / AAAQ_CASES.length) * 100;
+            appState.completed.app3 = appState.scores.app3 >= 100;
+            
+            if(appState.completed.app3) {
+                showFeedback("✅ DICTAMEN APROBADO: Estación III finalizada.", true);
+            } else {
+                showFeedback("❌ SESGO ÉTICO: Revisa el marco de derechos AAAQ.", false);
+            }
+            updateUI();
+        }
+
+        function showFeedback(msg, success) {
+            const f = document.getElementById('global-feedback');
+            f.innerText = msg;
+            f.className = `mx-8 mb-8 p-6 rounded-2xl font-black text-center block text-sm uppercase tracking-widest ${success ? 'bg-emerald-100 text-emerald-800 border-2 border-emerald-200' : 'bg-red-100 text-red-800 border-2 border-red-200'}`;
+            f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function updateUI() {
+            const avg = (appState.scores.app1 + appState.scores.app2 + appState.scores.app3) / 3;
+            document.getElementById('main-progress-bar').style.width = `${avg}%`;
+            document.getElementById('percentage-label').innerText = `${Math.round(avg)}%`;
+            
+            appState.stars = Math.floor(avg / 10);
+            document.getElementById('star-count').innerText = `⭐ ${appState.stars}/10`;
+
+            const stat = document.getElementById('status-text');
+            if(avg >= 90) stat.innerText = ">> INMUNIDAD COLECTIVA ALCANZADA";
+            else if(avg >= 50) stat.innerText = ">> RESPUESTA INMUNE EN CURSO...";
+            else stat.innerText = ">> CARGA VIRAL CRÍTICA - ACTUAR YA";
+
+            if(appState.stars >= 10) {
+                document.getElementById('cert-activation-zone').classList.remove('hidden');
+                document.getElementById('footer-status').innerText = "CERTIFICADO DISPONIBLE - INGRESA TU NOMBRE ABAJO";
+                document.getElementById('footer-status').classList.replace('text-slate-400', 'text-emerald-500');
+            }
+        }
+
+        function switchTab(n) {
+            // Actualizar visibilidad de contenido
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('content' + n).classList.add('active');
+
+            // Actualizar estilo visual de las pestañas
+            document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active-tab'));
+            document.getElementById('tab' + n).classList.add('active-tab');
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function generateTicket() {
+            const name = document.getElementById('user-name-input').value.trim();
+            if(!name) {
+                alert("Por favor, ingresa tu nombre para el ticket.");
+                return;
+            }
+            document.getElementById('cert-name').innerText = name.toUpperCase();
+            document.getElementById('cert-date').innerText = new Date().toLocaleDateString();
+            document.getElementById('certificate-area').classList.remove('hidden');
+            document.getElementById('certificate-area').classList.add('flex');
+        }
+
+        function initBioCanvas() {
+            const canvas = document.getElementById('bioCanvas');
+            const ctx = canvas.getContext('2d');
+            function draw() {
+                ctx.clearRect(0,0,100,100);
+                const avg = (appState.scores.app1 + appState.scores.app2 + appState.scores.app3) / 3;
+                
+                ctx.beginPath();
+                ctx.arc(50, 50, 40, 0, Math.PI * 2);
+                ctx.strokeStyle = '#1e293b';
+                ctx.lineWidth = 8;
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(50, 50, 40, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * (avg/100)));
+                ctx.strokeStyle = avg >= 90 ? '#10b981' : '#3b82f6';
+                ctx.lineWidth = 10;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                requestAnimationFrame(draw);
+            }
+            draw();
+        }
+
+        function allowDrop(ev) { ev.preventDefault(); }
+        function drag(ev) { ev.dataTransfer.setData("text", ev.target.id); }
+        function drop(ev) {
+            ev.preventDefault();
+            const data = ev.dataTransfer.getData("text");
+            ev.currentTarget.appendChild(document.getElementById(data));
+        }
+
+        window.onload = () => {
+            renderFESP();
+            renderAAAQ();
+            initBioCanvas();
+            switchTab(1);
+        };
+    </script>
+</body>
+</html>
